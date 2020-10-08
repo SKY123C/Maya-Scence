@@ -1,0 +1,500 @@
+# coding:utf-8
+from __future__ import division
+from PySide2 import QtWidgets, QtCore, QtGui
+import maya.cmds as mc
+import maya.OpenMayaUI as Mui
+import shiboken2
+import pymel.core as pm
+
+
+def connect_attr(file_name, texture_name, shape):
+    mc.connectAttr("{}.coverage".format(texture_name), "{}.coverage".format(file_name), f=True)
+    mc.connectAttr("{}.translateFrame".format(texture_name), "{}.translateFrame".format(file_name), f=True)
+    mc.connectAttr("{}.rotateFrame".format(texture_name), "{}.translateFrame".format(file_name), f=True)
+    mc.connectAttr("{}.mirrorU".format(texture_name), "{}.mirrorU".format(file_name), f=True)
+    mc.connectAttr("{}.mirrorV".format(texture_name), "{}.mirrorV".format(file_name), f=True)
+    mc.connectAttr("{}.stagger".format(texture_name), "{}.stagger".format(file_name), f=True)
+    mc.connectAttr("{}.wrapU".format(texture_name), "{}.wrapU".format(file_name), f=True)
+    mc.connectAttr("{}.wrapV".format(texture_name), "{}.wrapV".format(file_name), f=True)
+    mc.connectAttr("{}.repeatUV".format(texture_name), "{}.repeatUV".format(file_name), f=True)
+    mc.connectAttr("{}.offset".format(texture_name), "{}.offset".format(file_name), f=True)
+    mc.connectAttr("{}.rotateUV".format(texture_name), "{}.rotateUV".format(file_name), f=True)
+    mc.connectAttr("{}.noiseUV".format(texture_name), "{}.noiseUV".format(file_name), f=True)
+    mc.connectAttr("{}.vertexUvOne".format(texture_name), "{}.vertexUvOne".format(file_name), f=True)
+    mc.connectAttr("{}.vertexUvTwo".format(texture_name), "{}.vertexUvTwo".format(file_name), f=True)
+    mc.connectAttr("{}.vertexUvThree".format(texture_name), "{}.vertexUvThree".format(file_name), f=True)
+    mc.connectAttr("{}.vertexCameraOne".format(texture_name), "{}.vertexCameraOne".format(file_name), f=True)
+    mc.connectAttr("{}.outUV".format(texture_name), "{}.uv".format(file_name), f=True)
+    mc.connectAttr("{}.outUvFilterSize".format(texture_name), "{}.uvFilterSize".format(file_name), f=True)
+    mc.connectAttr("{}.outColor".format(file_name), "{}.color".format(shape))
+
+
+def get_window():
+    ptr = Mui.MQtUtil().mainWindow()
+
+    win = shiboken2.wrapInstance(long(ptr), QtWidgets.QDialog)
+    return win
+
+
+class Group(QtWidgets.QGroupBox):
+
+    def __init__(self, x, title="",):
+        super(Group, self).__init__(title)
+        self.x = x
+        self.__collapsed = False
+
+    def expand_rect(self):
+
+        return QtCore.QRect(0, 0, self.width(), 20)
+
+    def mouseReleaseEvent(self, event):
+
+        if self.expand_rect().contains(event.pos()):#(5)
+            self.toggled_collapse()
+            event.accept()
+        else:
+            event.ignore()
+
+    def toggled_collapse(self):
+
+        self.set_collapsed(self.x, not self.__collapsed)
+
+    def set_collapsed(self, size, state=True):
+
+        self.__collapsed = state
+        if state:
+            self.setMinimumHeight(20)
+            self.setMaximumHeight(20)
+
+        else:
+            self.setMinimumHeight(size)
+            self.setMaximumHeight(10000000)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter()
+        font = painter.font()
+        painter.begin(self)
+        font.setBold(True)
+        painter.setFont(font)
+
+        x = self.rect().x()
+        y = self.rect().y()
+        w = self.rect().width()
+        painter.fillRect(self.expand_rect(), QtGui.QColor(60, 60, 60))
+        painter.setRenderHint(painter.Antialiasing)
+        painter.drawText(
+            30, 0, self.width(), 30,
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
+            self.title()
+        )
+        self.__draw(painter, x, y)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.end()
+
+    def __draw(self, painter, x, y):
+
+        if not self.__collapsed:
+
+            points = [
+                QtCore.QPoint(x+10, y+6),
+                QtCore.QPoint(x+20, y+6),
+                QtCore.QPoint(x+15, y+11)
+
+            ]
+        else:
+
+            points = [
+                QtCore.QPoint(x+10, y+4),
+                QtCore.QPoint(x+17, y+9),
+                QtCore.QPoint(x+10, y+14)
+            ]
+
+        painter.setBrush(
+            QtGui.QBrush(
+                QtGui.QColor(187, 187, 187),
+                QtCore.Qt.SolidPattern
+                )
+
+        )
+        painter.drawPolygon(QtGui.QPolygon(points))
+
+
+class Camera(Group):
+    val = 0
+    obj_name = ""
+    translate_z = 0
+    expression_name = "expression"
+
+    def __init__(self, x, title=""):
+
+        super(Camera, self).__init__(x, title)
+
+        self.layout = QtWidgets.QGridLayout(self)
+        self.add_widget()
+
+    def add_widget(self):
+        position = QtWidgets.QLabel(u"位置")
+        focus = QtWidgets.QLabel(u"摄像机焦距")
+        button = QtWidgets.QPushButton(u"自动对焦")
+        position_x = QtWidgets.QLineEdit()
+        position_y = QtWidgets.QLineEdit()
+        position_z = QtWidgets.QLineEdit()
+        focus_value = QtWidgets.QLineEdit()
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider.setMinimum(-20)
+        slider.setMaximum(20)
+        position_x.setPlaceholderText("0.0")
+        position_y.setPlaceholderText("0.0")
+        position_z.setPlaceholderText("0.0")
+
+        slider.valueChanged.connect(lambda x: focus_value.setText(str(x*0.33)))
+        slider.valueChanged.connect(self.camera_focus)
+
+        self.layout.addWidget(position, 0, 6)
+        self.layout.addWidget(position_x, 0, 7)
+        self.layout.addWidget(position_y, 0, 8)
+        self.layout.addWidget(position_z, 0, 9)
+        self.layout.addWidget(focus, 1, 3, 1, 4)
+        self.layout.addWidget(focus_value, 1, 7)
+        self.layout.addWidget(slider, 1, 8, 1, 2)
+        self.layout.addWidget(button, 2, 0, 2, 10)
+
+        button.clicked.connect(self.focusing)
+        button.clicked.connect(lambda: slider.setValue(0))
+
+    @classmethod
+    def camera_focus(cls, value):
+        if not mc.lookThru(q=1).endswith("camera1"):
+            mc.warning("Please enter camera view")
+            return
+        translate_z = mc.getAttr("{}.translateZ".format(mc.lookThru(q=1)))
+        new_value = (value-cls.val)*0.33
+        cls.val = value
+        mc.setAttr("{}.translateZ".format(mc.lookThru(q=1)), translate_z+new_value*0.66)
+        cls.translate_z = mc.getAttr("{}.translateZ".format(mc.lookThru(q=1)))
+
+    @classmethod
+    def focusing(cls):
+        if not mc.objExists(cls.expression_name+"?"):
+            cls.expression_name = mc.expression()
+        else:
+            cls.expression_name = mc.ls(type="expression")[0]
+        if not mc.ls(rn=1, type="transform"):
+            mc.warning("Can't find reference")
+            return
+
+        selected = mc.ls(sl=True)
+        if not selected:
+            mc.warning("Please select object")
+            return
+
+        scene_name = mc.file(q=1, sn=1, shn=1).split('.')[0]
+
+        if not mc.objExists(scene_name+"_main"):
+            mc.group(n=scene_name+"_main", em=1)
+
+        for r_name in selected:
+            cls.obj_name = r_name
+            if mc.objExists(r_name+"_grp"):
+                mc.lookThru(r_name+"_camera1")
+                continue
+            bounding_box = pm.PyNode(r_name).boundingBox()
+            max_height = abs(bounding_box[0][1]-bounding_box[1][1])
+            b = mc.camera(n=r_name+"_camera")
+            mc.lookThru(b)
+            mc.move(0, 0, 4*max_height, b[0])
+            cls.translate_z = 4*max_height
+            mc.setAttr(b[1]+".focalLength", 70)
+            mc.setAttr(b[1]+".displayResolution", 1)
+            mc.setAttr(b[1]+".displayGateMask", 1)
+            mc.group(n=r_name+"_grp", em=1, p=scene_name+"_main")
+            mc.group(n="Ref_grp", em=1, p=scene_name+"_main|"+r_name+"_grp")
+            mc.parent(r_name, scene_name+"_main|"+r_name+"_grp"+"|Ref_grp")
+            mc.group(n="GI_grp", em=1, p=scene_name+"_main|"+r_name+"_grp")
+            mc.group(n="Cam_grp", em=1, p=scene_name+"_main|"+r_name+"_grp")
+            mc.parent(b[0], scene_name+"_main|"+r_name+"_grp"+"|Cam_grp")
+
+
+class Light(Group):
+
+    def __init__(self, x, title=""):
+
+        super(Light, self).__init__(x, title)
+
+        self.layout = QtWidgets.QGridLayout(self)
+        self.add_widget()
+
+    def add_widget(self):
+
+        button1 = QtWidgets.QPushButton(u"黎明")
+        button2 = QtWidgets.QPushButton(u"黄昏")
+        button3 = QtWidgets.QPushButton(u"Cg光照")
+        button4 = QtWidgets.QPushButton(u"日常")
+        button5 = QtWidgets.QPushButton(u"火")
+        button6 = QtWidgets.QPushButton(u"标椎")
+
+        self.layout.addWidget(button1, 0, 0, 1, 10)
+        self.layout.addWidget(button2, 1, 0, 1, 10)
+        self.layout.addWidget(button3, 2, 0, 1, 10)
+        self.layout.addWidget(button4, 3, 0, 1, 10)
+        self.layout.addWidget(button5, 4, 0, 1, 10)
+        self.layout.addWidget(button6, 5, 0, 1, 10)
+
+
+class GlobalLight(Group):
+    url = ["", "", ""]
+
+    def __init__(self, x, title=""):
+
+        super(GlobalLight, self).__init__(x, title)
+        self.layout = QtWidgets.QGridLayout(self)
+        self.add_widget()
+
+    def add_widget(self):
+        button1 = QtWidgets.QPushButton("autumn_forest")
+        button1.setCheckable(1)
+        button1.setStyleSheet("QPushButton{border-image: url(E:/Render/icons/autumn_forest.png)}")
+        button2 = QtWidgets.QPushButton("rooitou_park")
+        button2.setCheckable(1)
+        button2.setStyleSheet("QPushButton{border-image: url(E:/Render/icons/rooitou_park.png)}")
+        button3 = QtWidgets.QPushButton("summer_stage")
+        button3.setCheckable(1)
+        button3.setStyleSheet("QPushButton{border-image: url(E:/Render/icons/summer_stage.png)}")
+
+        button1_label = QtWidgets.QLabel("Off")
+        button2_label = QtWidgets.QLabel("Off")
+        button3_label = QtWidgets.QLabel("Off")
+
+        button1.toggled.connect(lambda x: (button1_label.setText("On"),
+                                         self.url.pop(0),
+                                         self.url.insert(0, "/autumn_forest.hdr"),
+                                         button2_label.setText("Off"),
+                                         button3_label.setText("Off"),
+                                         button2.setChecked(0),
+                                         button3.setChecked(0)) if x else button1_label.setText("Off"))
+        button2.toggled.connect(lambda x: (button2_label.setText("On"),
+                                         self.url.pop(0),
+                                         self.url.insert(0, "/rooitou_park.hdr"),
+                                         button1_label.setText("Off"),
+                                         button3_label.setText("Off"),
+                                         button1.setChecked(0),
+                                         button3.setChecked(0)) if x else button2_label.setText("Off"))
+        button3.toggled.connect(lambda x: (button3_label.setText("On"),
+                                         self.url.pop(0),
+                                         self.url.insert(0, "/summer_stage.hdr"),
+                                         button1_label.setText("Off"),
+                                         button2_label.setText("Off"),
+                                         button1.setChecked(0),
+                                         button2.setChecked(0)) if x else button3_label.setText("Off"))
+
+        label = QtWidgets.QLabel(u"HDR分辨率")
+        check_2k = QtWidgets.QRadioButton("2K")
+        check_4k = QtWidgets.QRadioButton("4K")
+        check_8k = QtWidgets.QRadioButton("8K")
+        check_16k = QtWidgets.QRadioButton("16K")
+
+        check_2k.toggled.connect(lambda x: self.url.insert(1, "2K") if x else self.url.pop(1))
+        check_4k.toggled.connect(lambda x: self.url.insert(1, "4K") if x else self.url.pop(1))
+        check_8k.toggled.connect(lambda x: self.url.insert(1, "8K") if x else self.url.pop(1))
+        button_updata = QtWidgets.QPushButton(u"更新场景HDR图")
+
+        button_updata.clicked.connect(self.replace)
+
+        button1.setFixedSize(140, 100)
+        button2.setFixedSize(140, 100)
+        button3.setFixedSize(140, 100)
+        self.layout.addWidget(button1, 0, 1, 1, 3)
+        self.layout.addWidget(button1_label, 1, 1, 1, 3)
+        self.layout.addWidget(button2, 0, 4, 1, 4)
+        self.layout.addWidget(button2_label, 1, 4, 1, 3)
+        self.layout.addWidget(button3, 0, 8, 1, 10)
+        self.layout.addWidget(button3_label, 1, 8, 1, 10)
+
+        self.layout.addWidget(label, 2, 2)
+        self.layout.addWidget(check_2k, 2, 3)
+        self.layout.addWidget(check_4k, 2, 5)
+        self.layout.addWidget(check_8k, 2, 7)
+        self.layout.addWidget(check_16k, 2, 9)
+        self.layout.addWidget(button_updata, 3, 0, 3, 18)
+
+    def replace(self):
+        if not len(self.url) >= 2:
+
+            mc.warning("Please Check currently")
+            return
+        scene_name = mc.file(q=1, sn=1, shn=1).split('.')[0]
+
+        if not mc.objExists(scene_name+"_main"):
+            mc.warning("Can't find Corresponding group")
+            return
+
+        url = "E:/Render/icons/HDR/"+self.url[1]+self.url[0]
+
+        if mc.ls(type="aiSkyDomeLight"):
+            light = mc.ls(type="aiSkyDomeLight")[0]
+            file_name = mc.listConnections(light, s=1, d=0)[0]
+            mc.setAttr("{}.fileTextureName".format(file_name), "{}".format(url), type="string")
+            return
+        light_name = mc.shadingNode("aiSkyDomeLight", name="{}Shape1".format(scene_name), asLight=True)
+        file_name = mc.shadingNode("file", asTexture=True, isColorManaged=True)
+        texture_name = mc.shadingNode("place2dTexture", asUtility=True)
+        light_shape = mc.listRelatives(light_name, c=1, s=1)[0]
+        connect_attr(file_name, texture_name, light_shape)
+
+        mc.setAttr("{}.fileTextureName".format(file_name), "{}".format(url), type="string")
+        scene_name = mc.file(q=1, sn=1, shn=1).split('.')[0]
+        mc.parent(light_name, scene_name+"_main|"+Camera.obj_name+"_grp|"+"GI_grp")
+
+
+class Frame(Group):
+
+    def __init__(self, x, title=""):
+
+        super(Frame, self).__init__(x, title)
+
+        self.layout = QtWidgets.QGridLayout(self)
+
+        self.add_widget()
+
+    def add_widget(self):
+
+        label = QtWidgets.QLabel(u"帧")
+
+        check1 = QtWidgets.QRadioButton("4")
+        check2 = QtWidgets.QRadioButton("8")
+        check3 = QtWidgets.QRadioButton("18")
+        check4 = QtWidgets.QRadioButton("36")
+
+        self.layout.addWidget(label, 0, 5, 10)
+        self.layout.addWidget(check1, 0, 7)
+        self.layout.addWidget(check2, 0, 8)
+        self.layout.addWidget(check3, 0, 9)
+        self.layout.addWidget(check4, 0, 10)
+
+        check1.clicked.connect(lambda: (mc.cutKey(Camera.obj_name+".ry", cl=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=0, time=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=360, time=4),
+                                        mc.expression(Camera.expression_name, e=1, s="if (frame>=5) {{{0}.translateZ=sin(frame*{1}*3.14/180)*{2};{0}.translateY=-cos(frame*{1}*3.14/180)*{2};{0}.rotateX = -(frame-1)*{1};}}".format(Camera.obj_name+"_camera1", 90, Camera.translate_z))))
+        check2.clicked.connect(lambda: (mc.cutKey(Camera.obj_name+".ry", cl=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=0, time=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=360, time=8),
+                                        mc.expression(Camera.expression_name, e=1, s="if (frame>=9) {{{0}.translateZ=cos((frame-1)*{1}*3.14/180)*{2};{0}.translateY=sin((frame-1)*{1}*3.14/180)*{2};{0}.rotateX = -(frame-1)*{1};}}".format(Camera.obj_name+"_camera1", 45, Camera.translate_z))))
+        check3.clicked.connect(lambda: (mc.cutKey(Camera.obj_name+".ry", cl=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=0, time=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=360, time=18),
+                                        mc.expression(Camera.expression_name, e=1, s="if (frame>=19) {{{0}.translateZ=cos((frame-1)*{1}*3.14/180)*{2};{0}.translateY=sin((frame-1)*{1}*3.14/180)*{2};{0}.rotateX = -(frame-1)*{1};}}".format(Camera.obj_name+"_camera1", 20, Camera.translate_z))))
+        check4.clicked.connect(lambda: (mc.cutKey(Camera.obj_name+".ry", cl=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=0, time=1),
+                                        mc.setKeyframe(Camera.obj_name+".ry", v=360, time=36),
+                                        mc.expression(Camera.expression_name, e=1, s="if (frame>=37) {{0}.translateZ=cos((frame-1)*{1}*3.14/180)*{2};{0}.translateY=sin((frame-1)*{1}*3.14/180)*{2};{0}.rotateX = -(frame-1)*{1};}".format(Camera.obj_name+"_camera1", 10, Camera.translate_z))))
+
+
+class Px(Group):
+
+    def __init__(self, x, title=""):
+        super(Px, self).__init__(x, title)
+
+        self.layout = QtWidgets.QGridLayout(self)
+
+        self.add_widget()
+
+    def add_widget(self):
+
+        label = QtWidgets.QLabel(u"分辨率")
+
+        check_1k = QtWidgets.QRadioButton("1K")
+        check_2k = QtWidgets.QRadioButton("2K")
+        check_4k = QtWidgets.QRadioButton("1080P")
+
+        self.layout.addWidget(label, 0, 5, 10)
+        self.layout.addWidget(check_1k, 0, 6)
+        self.layout.addWidget(check_2k, 0, 7)
+        self.layout.addWidget(check_4k, 0, 8)
+
+
+class Reference(Group):
+
+    def __init__(self, x, title=""):
+
+        super(Reference, self).__init__(x, title)
+        self.layout = QtWidgets.QVBoxLayout(self)
+
+        button1 = QtWidgets.QPushButton(u"导入标准Reference参考(四球体对照)")
+        button2 = QtWidgets.QPushButton(u"导入标准Reference参考(人体模型)")
+
+        self.layout.addWidget(button1)
+        self.layout.addWidget(button2)
+
+        button1.clicked.connect(self.ref_sphere)
+        button2.clicked.connect(self.ref_human)
+
+    @classmethod
+    def ref_sphere(cls):
+
+        mc.file("C:\Users\86173\Desktop\colorcheack_op.ma", iv=1, ns="test_sphere", reference=1)
+        mc.move(0, 0, 0, "test_sphere:master")
+        obj = pm.PyNode("test_sphere:master")
+        translate_y = obj.boundingBox()
+        height = abs(translate_y[0][1]-translate_y[1][1])
+
+        if translate_y[0][1] < 0:
+
+            mc.move(0, (-height/2)-translate_y[0][1], 0, "test_sphere:master", r=1)
+        else:
+
+            mc.move(0, height/2 - translate_y[1][1], 0, "test_sphere:master", r=1)
+
+    @classmethod
+    def ref_human(cls):
+
+        mc.file("C:\Users\86173\Desktop\scale_figure_lzl.ma", iv=1, ns="test_human", reference=1)
+        mc.move(0, 0, 0, "test_human:master")
+        obj = pm.PyNode("test_human:master")
+        translate_y = obj.boundingBox()
+        height = abs(translate_y[0][1]-translate_y[1][1])
+
+        if translate_y[0][1] < 0:
+
+            mc.move(0, (-height/2)-translate_y[0][1], 0, "test_human:master", r=1)
+        else:
+
+            mc.move(0, height/2 - translate_y[1][1], 0, "test_human:master", r=1)
+
+
+class Texture(Group):
+
+    def __init__(self, x, title=""):
+
+        super(Texture, self).__init__(x, title)
+
+        self.layout = QtWidgets.QVBoxLayout(self)
+
+        button1 = QtWidgets.QPushButton(u"资产贴图检查")
+
+        self.layout.addWidget(button1)
+
+
+def main():
+    mainWindow = QtWidgets.QMainWindow(parent=get_window())
+    widget = QtWidgets.QWidget()
+    v_layout = QtWidgets.QVBoxLayout(widget)
+    camera = Camera(20, u"照相机")
+    light = Light(20, u"自定义灯光")
+    gLight = GlobalLight(20, u"全局灯光")
+    frame = Frame(15, u"帧数")
+    px = Px(15, u"渲染分辨率")
+    reference =Reference(25, u"创建Reference")
+    texture = Texture(10, u"创建贴图检查")
+    v_layout.addWidget(camera)
+    v_layout.addWidget(light)
+    v_layout.addWidget(gLight)
+    v_layout.addWidget(frame)
+    v_layout.addWidget(px)
+    v_layout.addWidget(reference)
+    v_layout.addWidget(texture)
+    v_layout.addStretch()
+
+    mainWindow.setCentralWidget(widget)
+
+    mainWindow.show()
+main()
